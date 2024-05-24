@@ -34,6 +34,9 @@ import android.graphics.ImageFormat;
 import android.hardware.Camera;
 import android.hardware.Camera.CameraInfo;
 import android.hardware.Camera.Parameters;
+import android.hardware.camera2.CameraAccessException;
+import android.hardware.camera2.CameraManager;
+import android.os.Build;
 import android.os.Handler;
 import android.os.Process;
 import android.view.SurfaceHolder;
@@ -112,6 +115,7 @@ public final class CodeScanner {
     private volatile DecodeCallback mDecodeCallback = null;
     private volatile ErrorCallback mErrorCallback = null;
     private volatile DecoderWrapper mDecoderWrapper = null;
+    private volatile CameraManager mCameraManager = null;
     private volatile boolean mInitialization = false;
     private volatile boolean mInitialized = false;
     private volatile boolean mStoppingPreview = false;
@@ -624,6 +628,7 @@ public final class CodeScanner {
         mStoppingPreview = false;
         mPreviewActive = false;
         mSafeAutoFocusing = false;
+        mCameraManager = null;
         final DecoderWrapper decoderWrapper = mDecoderWrapper;
         if (decoderWrapper != null) {
             mDecoderWrapper = null;
@@ -636,16 +641,27 @@ public final class CodeScanner {
             final DecoderWrapper decoderWrapper = mDecoderWrapper;
             if (decoderWrapper != null) {
                 final Camera camera = decoderWrapper.getCamera();
-                final Parameters parameters = camera.getParameters();
-                if (parameters == null) {
-                    return;
-                }
-                if (flashEnabled) {
-                    Utils.setFlashMode(parameters, Parameters.FLASH_MODE_TORCH);
+
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                    try {
+                        String cameraId = mCameraManager.getCameraIdList()[mCameraId];
+                        if (mCameraManager != null) {
+                            mCameraManager.setTorchMode(cameraId, true);
+                        }
+                    } catch (final Exception ignored) {
+                    }
                 } else {
-                    Utils.setFlashMode(parameters, Parameters.FLASH_MODE_OFF);
+                    final Parameters parameters = camera.getParameters();
+                    if (parameters == null) {
+                        return;
+                    }
+                    if (flashEnabled) {
+                        Utils.setFlashMode(parameters, Parameters.FLASH_MODE_TORCH);
+                    } else {
+                        Utils.setFlashMode(parameters, Parameters.FLASH_MODE_OFF);
+                    }
+                    camera.setParameters(parameters);
                 }
-                camera.setParameters(parameters);
             }
         } catch (final Exception ignored) {
         }
@@ -817,6 +833,11 @@ public final class CodeScanner {
 
         private void initialize() {
             Camera camera = null;
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                mCameraManager = (CameraManager) mContext.getSystemService(Context.CAMERA_SERVICE);
+            }
+
             final CameraInfo cameraInfo = new CameraInfo();
             final int cameraId = mCameraId;
             if (cameraId == CAMERA_BACK || cameraId == CAMERA_FRONT) {
